@@ -1,4 +1,4 @@
-Section,Checklist Item,Description
+﻿Section,Checklist Item,Description
 회원가입 및 프로필 관리,서버측 입력 검증,"사용자명(username)와 비밀번호(password)에 대해 길이, 허용 문자 집합, 형식 등 서버측 검증 수행. XSS 공격 방지를 위해 입력값 필터링 및 인코딩 적용 여부 확인"
 ,CSRF 보호,"회원가입, 로그인, 프로필 수정 등 모든 폼에 대해 CSRF 토큰 사용 여부를 확인하여 요청 위조 공격 방지"
 ,비밀번호 보안,"비밀번호를 평문으로 저장하지 않고 bcrypt, Argon2 등 강력한 해시 알고리즘과 고유 salt를 적용하여 암호화 저장하는지 확인"
