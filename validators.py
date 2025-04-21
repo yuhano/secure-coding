@@ -41,7 +41,7 @@ def clean_text(text: str, *, max_len=500, blank_ok=False) -> str:
         raise ValueError("입력 길이가 너무 깁니다.")
     return escape(text)
 
-def validate_username(username: str) -> None:
+def validate_username(username: str) -> str:
     """Ensure username contains 3‑20 alphanumerics/underscores."""
     username = _require(username, "사용자명")
     if not USERNAME_RE.fullmatch(username):
@@ -49,7 +49,7 @@ def validate_username(username: str) -> None:
     return username
 
 
-def validate_password(password: str) -> None:
+def validate_password(password: str) -> str:
     """Require minimum password length of 8."""
     password = _require(password, "비밀번호")
     if not PW_POLICY_RE.search(password):
@@ -69,7 +69,7 @@ def validate_uuid4(value: str) -> bool:
         return False
 
 
-def validate_price(price_str: str) -> str:
+def validate_price(price_str: str) -> Decimal:
     """Return price as a string with max two decimals, > 0."""
     price_str  = _require(price_str, "가격")
     try:
