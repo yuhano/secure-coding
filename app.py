@@ -24,6 +24,13 @@ socketio = SocketIO(app)
 
 csrf = CSRFProtect(app)
 
+app.config.update(
+    # SESSION_COOKIE_SECURE = True,       # HTTPS 전용
+    SESSION_COOKIE_HTTPONLY = True,     # JS 접근 차단
+    SESSION_COOKIE_SAMESITE = "Lax",    # 필요하면 Strict
+    PERMANENT_SESSION_LIFETIME = 3600,  # 1시간(필요에 맞게)
+)
+
 # 데이터베이스 연결 관리: 요청마다 연결 생성 후 사용, 종료 시 close
 def get_db():
     db = getattr(g, '_database', None)
