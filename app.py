@@ -5,6 +5,8 @@ from flask_socketio import SocketIO, send, disconnect
 from werkzeug.security import generate_password_hash, check_password_hash 
 from functools import wraps
 from flask_wtf import CSRFProtect
+import os
+import secrets      
 
 # import validation helpers from separate module
 from validators import (
@@ -16,7 +18,7 @@ from validators import (
 )
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'secret!'
+app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32)
 DATABASE = 'market.db'
 socketio = SocketIO(app)
 
