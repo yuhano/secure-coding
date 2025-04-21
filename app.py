@@ -155,7 +155,7 @@ def login():
 @app.route('/logout')
 @login_required
 def logout():
-    session.pop('user_id', None)
+    session.clear()
     flash('로그아웃되었습니다.')
     return redirect(url_for('index'))
 
