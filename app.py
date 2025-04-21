@@ -75,7 +75,7 @@ def init_db():
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
                 description TEXT NOT NULL,
-                price TEXT NOT NULL,
+                price NUMERIC NOT NULL CHECK(price > 0),
                 seller_id TEXT NOT NULL
             )
         """)
