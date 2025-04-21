@@ -22,6 +22,8 @@ app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32
 DATABASE = 'market.db'
 socketio = SocketIO(app)
 
+csrf = CSRFProtect(app)
+
 # 데이터베이스 연결 관리: 요청마다 연결 생성 후 사용, 종료 시 close
 def get_db():
     db = getattr(g, '_database', None)
