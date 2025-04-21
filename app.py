@@ -1,8 +1,10 @@
 import sqlite3
 import uuid
 from flask import Flask, render_template, request, redirect, url_for, session, flash, g
-from flask_socketio import SocketIO, send
+from flask_socketio import SocketIO, send, disconnect
 from werkzeug.security import generate_password_hash, check_password_hash 
+from functools import wraps
+from flask_wtf import CSRFProtect
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -58,6 +60,16 @@ def init_db():
         """)
         db.commit()
 
+def login_required(view_func):
+    """Decorator to enforce authentication for routes."""
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if "user_id" not in session:
+            flash("로그인이 필요합니다.")
+            return redirect(url_for("login"))
+        return view_func(*args, **kwargs)
+    return wrapper
+
 # 기본 라우트
 @app.route('/')
 def index():
@@ -109,6 +121,7 @@ def login():
 
 # 로그아웃
 @app.route('/logout')
+@login_required
 def logout():
     session.pop('user_id', None)
     flash('로그아웃되었습니다.')
@@ -116,9 +129,8 @@ def logout():
 
 # 대시보드: 사용자 정보와 전체 상품 리스트 표시
 @app.route('/dashboard')
+@login_required
 def dashboard():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
     db = get_db()
     cursor = db.cursor()
     # 현재 사용자 조회
@@ -131,9 +143,8 @@ def dashboard():
 
 # 프로필 페이지: bio 업데이트 가능
 @app.route('/profile', methods=['GET', 'POST'])
+@login_required
 def profile():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
     db = get_db()
     cursor = db.cursor()
     if request.method == 'POST':
@@ -148,9 +159,8 @@ def profile():
 
 # 상품 등록
 @app.route('/product/new', methods=['GET', 'POST'])
+@login_required
 def new_product():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
     if request.method == 'POST':
         title = request.form['title']
         description = request.form['description']
@@ -169,6 +179,7 @@ def new_product():
 
 # 상품 상세보기
 @app.route('/product/<product_id>')
+@login_required
 def view_product(product_id):
     db = get_db()
     cursor = db.cursor()
@@ -184,9 +195,8 @@ def view_product(product_id):
 
 # 신고하기
 @app.route('/report', methods=['GET', 'POST'])
+@login_required
 def report():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
     if request.method == 'POST':
         target_id = request.form['target_id']
         reason = request.form['reason']
@@ -204,6 +214,7 @@ def report():
 
 # 실시간 채팅: 클라이언트가 메시지를 보내면 전체 브로드캐스트
 @socketio.on('send_message')
+@login_required
 def handle_send_message_event(data):
     data['message_id'] = str(uuid.uuid4())
     send(data, broadcast=True)
