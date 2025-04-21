@@ -6,6 +6,15 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from flask_wtf import CSRFProtect
 
+# import validation helpers from separate module
+from validators import (
+    validate_username,
+    validate_password,
+    validate_uuid4,
+    clean_text,
+    validate_price,
+)
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 DATABASE = 'market.db'
@@ -81,13 +90,18 @@ def index():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+        try:
+            username = validate_username(request.form["username"])
+            password = validate_password(request.form["password"])
+        except ValueError as e:
+            flash(str(e))
+            return redirect(url_for("register"))
+        
         db = get_db()
         cursor = db.cursor()
         # 중복 사용자 체크
-        cursor.execute("SELECT * FROM user WHERE username = ?", (username,))
-        if cursor.fetchone() is not None:
+        cursor.execute("SELECT 1 FROM user WHERE username = ?", (username,))
+        if cursor.fetchone():
             flash('이미 존재하는 사용자명입니다.')
             return redirect(url_for('register'))
 
@@ -104,13 +118,19 @@ def register():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form['username']
-        password_candidate = request.form['password'] # Password entered by user
+        try:
+            username = validate_username(request.form["username"])
+            password = validate_password(request.form["password"])
+        except ValueError as e:
+            flash(str(e))
+            return redirect(url_for("login"))
+
         db = get_db()
         cursor = db.cursor()
         cursor.execute("SELECT * FROM user WHERE username = ?", (username,))
         user = cursor.fetchone()
-        if user and check_password_hash(user['password'], password_candidate):
+        if user and check_password_hash(user['password'], password):
+            session.clear()  # 세션 고정 공격 방지
             session['user_id'] = user['id']
             flash('로그인 성공!')
             return redirect(url_for('dashboard'))
@@ -148,29 +168,35 @@ def profile():
     db = get_db()
     cursor = db.cursor()
     if request.method == 'POST':
-        bio = request.form.get('bio', '')
+        try:
+            bio = clean_text(request.form.get("bio", ""), max_len=300, blank_ok=True)
+        except ValueError as e:
+            flash(str(e))
+            return redirect(url_for("profile"))
         cursor.execute("UPDATE user SET bio = ? WHERE id = ?", (bio, session['user_id']))
         db.commit()
         flash('프로필이 업데이트되었습니다.')
         return redirect(url_for('profile'))
     cursor.execute("SELECT * FROM user WHERE id = ?", (session['user_id'],))
-    current_user = cursor.fetchone()
-    return render_template('profile.html', user=current_user)
+    return render_template('profile.html', user=cursor.fetchone())
 
 # 상품 등록
 @app.route('/product/new', methods=['GET', 'POST'])
 @login_required
 def new_product():
-    if request.method == 'POST':
-        title = request.form['title']
-        description = request.form['description']
-        price = request.form['price']
+    if request.method == "POST":
+        try:
+            title = clean_text(request.form["title"], max_len=100)
+            description = clean_text(request.form.get("description", ""), blank_ok=True)
+            price = validate_price(request.form["price"])
+        except ValueError as e:
+            flash(str(e))
+            return redirect(url_for("new_product"))
         db = get_db()
         cursor = db.cursor()
-        product_id = str(uuid.uuid4())
         cursor.execute(
             "INSERT INTO product (id, title, description, price, seller_id) VALUES (?, ?, ?, ?, ?)",
-            (product_id, title, description, price, session['user_id'])
+            (str(uuid.uuid4()), title, description, str(price), session['user_id'])
         )
         db.commit()
         flash('상품이 등록되었습니다.')
@@ -181,6 +207,9 @@ def new_product():
 @app.route('/product/<product_id>')
 @login_required
 def view_product(product_id):
+    if not validate_uuid4(product_id):
+        flash("잘못된 상품 ID입니다.")
+        return redirect(url_for("dashboard"))
     db = get_db()
     cursor = db.cursor()
     cursor.execute("SELECT * FROM product WHERE id = ?", (product_id,))
@@ -199,13 +228,20 @@ def view_product(product_id):
 def report():
     if request.method == 'POST':
         target_id = request.form['target_id']
-        reason = request.form['reason']
+
+        try:
+            if not validate_uuid4(target_id):
+                raise ValueError("대상이 유효하지 않습니다.")
+            reason = clean_text(request.form['reason'], max_len=300)
+        except ValueError as e:
+            flash(str(e))
+            return redirect(url_for("report"))
+        
         db = get_db()
         cursor = db.cursor()
-        report_id = str(uuid.uuid4())
         cursor.execute(
             "INSERT INTO report (id, reporter_id, target_id, reason) VALUES (?, ?, ?, ?)",
-            (report_id, session['user_id'], target_id, reason)
+            (str(uuid.uuid4()), session['user_id'], target_id, reason)
         )
         db.commit()
         flash('신고가 접수되었습니다.')
@@ -216,8 +252,17 @@ def report():
 @socketio.on('send_message')
 @login_required
 def handle_send_message_event(data):
-    data['message_id'] = str(uuid.uuid4())
-    send(data, broadcast=True)
+    try:
+        msg = clean_text(data.get("message", ""), max_len=1000)
+    except ValueError as e:
+        flash(str(e))
+        return
+    payload = {
+        "message_id": str(uuid.uuid4()),
+        "sender": session["user_id"],
+        "message": msg,
+    }
+    send(payload, broadcast=True)
 
 if __name__ == '__main__':
     init_db()  # 앱 컨텍스트 내에서 테이블 생성
