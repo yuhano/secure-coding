@@ -7,6 +7,9 @@ from functools import wraps
 from flask_wtf import CSRFProtect
 import os
 import secrets      
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from datetime import datetime, timedelta
 
 # import validation helpers from separate module
 from validators import (
@@ -30,6 +33,13 @@ app.config.update(
     SESSION_COOKIE_SAMESITE = "Lax",    # 필요하면 Strict
     PERMANENT_SESSION_LIFETIME = 3600,  # 1시간(필요에 맞게)
 )
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"]
+)
+
+limiter.init_app(app)
 
 # 데이터베이스 연결 관리: 요청마다 연결 생성 후 사용, 종료 시 close
 def get_db():
@@ -99,6 +109,7 @@ def index():
 
 # 회원가입
 @app.route('/register', methods=['GET', 'POST'])
+@limiter.limit("2 per hour", methods=["POST"])
 def register():
     if request.method == 'POST':
         try:
@@ -127,6 +138,7 @@ def register():
 
 # 로그인
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("2 per minute", methods=["POST"])
 def login():
     if request.method == 'POST':
         try:
@@ -195,6 +207,7 @@ def profile():
 # 상품 등록
 @app.route('/product/new', methods=['GET', 'POST'])
 @login_required
+@limiter.limit("2 per minute", methods=["POST"])
 def new_product():
     if request.method == "POST":
         try:
@@ -236,6 +249,7 @@ def view_product(product_id):
 
 # 신고하기
 @app.route('/report', methods=['GET', 'POST'])
+@limiter.limit("2 per minute", methods=["POST"])
 @login_required
 def report():
     if request.method == 'POST':
@@ -260,10 +274,22 @@ def report():
         return redirect(url_for('dashboard'))
     return render_template('report.html')
 
+msg_history = {}
+
 # 실시간 채팅: 클라이언트가 메시지를 보내면 전체 브로드캐스트
 @socketio.on('send_message')
 @login_required
 def handle_send_message_event(data):
+    uid = session['user_id']
+    now = datetime.utcnow()
+    window = now - timedelta(seconds=60)
+    
+    msg_history.setdefault(uid, []).append(now)
+    # 60초 이내 30개 초과 시 무시
+    msg_history[uid] = [t for t in msg_history[uid] if t > window]
+    if len(msg_history[uid]) > 3:
+        return
+    
     try:
         msg = clean_text(data.get("message", ""), max_len=1000)
     except ValueError as e:
