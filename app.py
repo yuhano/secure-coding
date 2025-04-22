@@ -112,17 +112,21 @@ def index():
 @limiter.limit("2 per hour", methods=["POST"])
 def register():
     if request.method == 'POST':
-        # 폼에서 두 번 받은 비밀번호를 꺼내서 먼저 일치 여부 검사
-        raw_pw = request.form.get("password", "")
-        raw_pw_confirm = request.form.get("password_confirm", "")
-        if raw_pw != raw_pw_confirm:
+        # ── 입력값 ──
+        form = request.form
+        raw_username          = form.get("username", "")
+        raw_password            = form.get("password", "")
+        raw_password_confirm    = form.get("password_confirm", "")
+
+        # ── 비즈니스 로직 ──
+        if raw_password != raw_password_confirm:
             flash('비밀번호가 일치하지 않습니다.')
             return redirect(url_for('register'))
 
         # 유효성 검사
         try:
-            username = validate_username(request.form["username"])
-            password = validate_password(raw_pw)
+            username = validate_username(raw_username)
+            password = validate_password(raw_password)
         except ValueError as e:
             flash(str(e))
             return redirect(url_for("register"))
@@ -149,9 +153,15 @@ def register():
 @limiter.limit("2 per minute", methods=["POST"])
 def login():
     if request.method == 'POST':
+        # ── 입력값 ──
+        form = request.form
+        raw_username = form.get("username", "").strip()
+        raw_password = form.get("password", "")
+
+        # ── 비즈니스 로직 ──
         try:
-            username = validate_username(request.form["username"])
-            password = validate_password(request.form["password"])
+            username = validate_username(raw_username)
+            password = validate_password(raw_password)
         except ValueError as e:
             flash(str(e))
             return redirect(url_for("login"))
@@ -197,18 +207,23 @@ def dashboard():
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
 def profile():
-    db = get_db()
-    cursor = db.cursor()
     if request.method == 'POST':
+        # ── 입력값 ──
+        raw_bio = request.form.get("bio", "")
         try:
-            bio = clean_text(request.form.get("bio", ""), max_len=300, blank_ok=True)
+            bio = clean_text(raw_bio, max_len=300, blank_ok=True)
         except ValueError as e:
             flash(str(e))
             return redirect(url_for("profile"))
+
+        db = get_db()
+        cursor = db.cursor()
         cursor.execute("UPDATE user SET bio = ? WHERE id = ?", (bio, session['user_id']))
         db.commit()
         flash('프로필이 업데이트되었습니다.')
         return redirect(url_for('profile'))
+
+    cursor = get_db().cursor()
     cursor.execute("SELECT * FROM user WHERE id = ?", (session['user_id'],))
     return render_template('profile.html', user=cursor.fetchone())
 
@@ -218,10 +233,17 @@ def profile():
 @limiter.limit("2 per minute", methods=["POST"])
 def new_product():
     if request.method == "POST":
+        # ── 입력값 ──
+        form = request.form
+        raw_title       = form.get("title", "")
+        raw_description = form.get("description", "")
+        raw_price       = form.get("price", "")
+
+        # ── 비즈니스 로직 ──
         try:
-            title = clean_text(request.form["title"], max_len=100)
-            description = clean_text(request.form.get("description", ""), blank_ok=True)
-            price = validate_price(request.form["price"])
+            title       = clean_text(raw_title, max_len=100)
+            description = clean_text(raw_description, blank_ok=True)
+            price       = validate_price(raw_price)
         except ValueError as e:
             flash(str(e))
             return redirect(url_for("new_product"))
@@ -261,12 +283,16 @@ def view_product(product_id):
 @login_required
 def report():
     if request.method == 'POST':
-        target_id = request.form['target_id']
+        # ── 입력값 ──
+        form      = request.form
+        raw_target_id = form.get("target_id", "")
+        raw_reason= form.get("reason", "")
 
+        # ── 비즈니스 로직 ──
         try:
-            if not validate_uuid4(target_id):
+            if not validate_uuid4(raw_target_id):
                 raise ValueError("대상이 유효하지 않습니다.")
-            reason = clean_text(request.form['reason'], max_len=300)
+            reason = clean_text(raw_reason, max_len=300)
         except ValueError as e:
             flash(str(e))
             return redirect(url_for("report"))
@@ -275,7 +301,7 @@ def report():
         cursor = db.cursor()
         cursor.execute(
             "INSERT INTO report (id, reporter_id, target_id, reason) VALUES (?, ?, ?, ?)",
-            (str(uuid.uuid4()), session['user_id'], target_id, reason)
+            (str(uuid.uuid4()), session['user_id'], raw_target_id, reason)
         )
         db.commit()
         flash('신고가 접수되었습니다.')
@@ -288,10 +314,13 @@ msg_history = {}
 @socketio.on('send_message')
 @login_required
 def handle_send_message_event(data):
-    uid = session['user_id']
-    now = datetime.utcnow()
+    # ── 입력값 ──
+    uid           = session['user_id']
+    now           = datetime.utcnow()
+    raw_msg       = data.get("message", "")
+
+    # ── 비즈니스 로직 ──
     window = now - timedelta(seconds=60)
-    
     msg_history.setdefault(uid, []).append(now)
     # 60초 이내 30개 초과 시 무시
     msg_history[uid] = [t for t in msg_history[uid] if t > window]
@@ -299,13 +328,13 @@ def handle_send_message_event(data):
         return
     
     try:
-        msg = clean_text(data.get("message", ""), max_len=1000)
+        msg = clean_text(raw_msg, max_len=1000)
     except ValueError as e:
         flash(str(e))
         return
     payload = {
         "message_id": str(uuid.uuid4()),
-        "sender": session["user_id"],
+        "sender": uid,
         "username": session.get('username', 'Unknown'),
         "message": msg,
     }
