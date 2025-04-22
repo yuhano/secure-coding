@@ -112,9 +112,17 @@ def index():
 @limiter.limit("2 per hour", methods=["POST"])
 def register():
     if request.method == 'POST':
+        # 폼에서 두 번 받은 비밀번호를 꺼내서 먼저 일치 여부 검사
+        raw_pw = request.form.get("password", "")
+        raw_pw_confirm = request.form.get("password_confirm", "")
+        if raw_pw != raw_pw_confirm:
+            flash('비밀번호가 일치하지 않습니다.')
+            return redirect(url_for('register'))
+
+        # 유효성 검사
         try:
             username = validate_username(request.form["username"])
-            password = validate_password(request.form["password"])
+            password = validate_password(raw_pw)
         except ValueError as e:
             flash(str(e))
             return redirect(url_for("register"))
