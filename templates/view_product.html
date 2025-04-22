@@ -4,5 +4,14 @@
 <h2>{{ product.title }}</h2>
 <p>{{ product.description }}</p>
 <p>가격: {{ product.price }}</p>
-<p>판매자: {{ seller.username if seller else '알 수 없음' }}</p>
+<p>
+    판매자:
+    {% if seller %}
+      <a href="{{ url_for('user_profile', user_id=seller.id) }}">
+        {{ seller.username }}
+      </a>
+    {% else %}
+      알 수 없음
+    {% endif %}
+  </p>
 {% endblock %}

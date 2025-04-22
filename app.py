@@ -329,6 +329,25 @@ def view_product(product_id):
     seller = cursor.fetchone()
     return render_template('view_product.html', product=product, seller=seller)
 
+# 공개 사용자 프로필 보기
+@app.route('/user/<user_id>')
+@login_required
+def user_profile(user_id):
+    # ID 유효성 검사
+    if not validate_uuid4(user_id):
+        flash("잘못된 사용자 요청입니다.")
+        return redirect(url_for('dashboard'))
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT username, bio FROM user WHERE id = ?", (user_id,))
+    user = cursor.fetchone()
+    if not user:
+        flash("존재하지 않는 사용자입니다.")
+        return redirect(url_for('dashboard'))
+
+    return render_template('user_profile.html', user=user)
+
 # 신고하기
 @app.route('/report', methods=['GET', 'POST'])
 @limiter.limit("2 per minute", methods=["POST"])
