@@ -9,4 +9,9 @@
   <textarea name="bio" rows="4" cols="50">{{ user.bio or '' }}</textarea><br>
   <button type="submit">프로필 업데이트</button>
 </form>
+
+<!-- 비밀번호 변경 버튼 -->
+<form action="{{ url_for('change_password') }}" method="get" style="margin-top: 1em;">
+  <button type="submit">비밀번호 변경</button>
+</form>
 {% endblock %}

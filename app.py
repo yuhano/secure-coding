@@ -148,6 +148,58 @@ def register():
         return redirect(url_for('login'))
     return render_template('register.html')
 
+# 비밀번호 변경
+@app.route('/change_password', methods=['GET', 'POST'])
+@login_required
+@limiter.limit("2 per hour", methods=["POST"])
+def change_password():
+    if request.method == 'POST':
+        # ── 입력값 ──
+        form             = request.form
+        raw_current_pw   = form.get("current_password", "")
+        raw_new_pw       = form.get("new_password", "")
+        raw_confirm_pw   = form.get("confirm_password", "")
+
+        # ── 비즈니스 로직 ──
+        # 새 비밀번호 일치 여부 검사
+        if raw_new_pw != raw_confirm_pw:
+            flash('새 비밀번호가 일치하지 않습니다.')
+            return redirect(url_for('change_password'))
+
+        # 새 비밀번호 정책 검사
+        try:
+            current_pw = validate_password(raw_current_pw)
+            new_pw = validate_password(raw_new_pw)
+        except ValueError as e:
+            flash(str(e))
+            return redirect(url_for('change_password'))
+
+        db = get_db()
+        cursor = db.cursor()
+        # 현재 비밀번호 해시 조회
+        cursor.execute("SELECT password FROM user WHERE id = ?", (session['user_id'],))
+        row = cursor.fetchone()
+
+        # 현재 비밀번호 검증
+        if not row or not check_password_hash(row['password'], current_pw):
+            flash('현재 비밀번호가 올바르지 않습니다.')
+            return redirect(url_for('change_password'))
+
+        # 업데이트
+        new_hash = generate_password_hash(new_pw)
+        cursor.execute(
+            "UPDATE user SET password = ? WHERE id = ?",
+            (new_hash, session['user_id'])
+        )
+        db.commit()
+
+        flash('비밀번호가 성공적으로 변경되었습니다.')
+        return redirect(url_for('profile'))
+
+    # GET 요청일 때는 템플릿 렌더링
+    return render_template('change_password.html')
+
+
 # 로그인
 @app.route('/login', methods=['GET', 'POST'])
 @limiter.limit("2 per minute", methods=["POST"])
