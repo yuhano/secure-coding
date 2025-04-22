@@ -352,6 +352,10 @@ def view_product(product_id):
 @app.route('/user/<user_id>')
 @login_required
 def user_profile(user_id):
+    # ── 본인 계정이면 /profile 로 자동 리다이렉트 ──
+    if user_id == session.get('user_id'):
+        return redirect(url_for('profile'))
+
     # ID 유효성 검사
     if not validate_uuid4(user_id):
         flash("잘못된 사용자 요청입니다.")
