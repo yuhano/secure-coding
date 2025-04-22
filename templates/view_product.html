@@ -14,4 +14,18 @@
       알 수 없음
     {% endif %}
   </p>
+
+  {% if session.get('user_id') == product.seller_id %}
+  <form action="{{ url_for('delete_product', product_id=product.id) }}"
+        method="post"
+        style="margin-top:1em;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {# 어느 페이지에서 왔는지 기록 #}
+    <input type="hidden" name="next" value="{{ request.args.get('next', 'dashboard') }}">
+    <button type="submit"
+            onclick="return confirm('정말 이 상품을 삭제하시겠습니까?');">
+      상품 삭제
+    </button>
+  </form>
+{% endif %}
 {% endblock %}

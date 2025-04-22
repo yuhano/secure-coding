@@ -378,6 +378,47 @@ def user_profile(user_id):
 
     return render_template('user_profile.html', user=user, products=products)
 
+@app.route('/product/<product_id>/delete', methods=['POST'])
+@login_required
+@limiter.limit("2 per minute", methods=["POST"])
+def delete_product(product_id):
+    # ── 입력값  ──
+    form = request.form
+    raw_next = form.get('next', 'dashboard')
+
+    # ── next 파라미터 화이트리스트 검증 ──
+    allowed = {'dashboard', 'profile'}
+    next_page = raw_next if raw_next in allowed else 'dashboard'
+
+    # ── ID 유효성 검사 ──
+    if not validate_uuid4(product_id):
+        flash("잘못된 요청입니다.")
+        return redirect(url_for(next_page))
+
+    db = get_db()
+    cursor = db.cursor()
+
+    # 2) 상품 조회
+    cursor.execute("SELECT seller_id FROM product WHERE id = ?", (product_id,))
+    row = cursor.fetchone()
+    if not row:
+        flash("존재하지 않는 상품입니다.")
+        return redirect(url_for(next_page))
+
+    # 본인 여부 확인
+    if row['seller_id'] != session['user_id']:
+        flash("삭제 권한이 없습니다.")
+        return redirect(url_for('view_product', product_id=product_id, next=next_page))
+
+    # ── 삭제 실행 ──
+    cursor.execute("DELETE FROM product WHERE id = ?", (product_id,))
+    db.commit()
+    flash("상품이 삭제되었습니다.")
+
+    # ── 원래 페이지로 복귀 ──
+    return redirect(url_for(next_page))
+
+
 # 신고하기
 @app.route('/report', methods=['GET', 'POST'])
 @limiter.limit("2 per minute", methods=["POST"])
