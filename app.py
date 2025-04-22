@@ -270,14 +270,33 @@ def profile():
 
         db = get_db()
         cursor = db.cursor()
-        cursor.execute("UPDATE user SET bio = ? WHERE id = ?", (bio, session['user_id']))
+        cursor.execute(
+            "UPDATE user SET bio = ? WHERE id = ?",
+            (bio, session['user_id'])
+        )
         db.commit()
         flash('프로필이 업데이트되었습니다.')
         return redirect(url_for('profile'))
 
-    cursor = get_db().cursor()
-    cursor.execute("SELECT * FROM user WHERE id = ?", (session['user_id'],))
-    return render_template('profile.html', user=cursor.fetchone())
+    # GET 요청 시 사용자 정보 + 본인이 등록한 상품 조회
+    db = get_db()
+    cursor = db.cursor()
+
+    # 사용자 정보
+    cursor.execute(
+        "SELECT * FROM user WHERE id = ?",
+        (session['user_id'],)
+    )
+    user = cursor.fetchone()
+
+    # 사용자가 등록한 상품
+    cursor.execute(
+        "SELECT * FROM product WHERE seller_id = ?",
+        (session['user_id'],)
+    )
+    products = cursor.fetchall()
+
+    return render_template('profile.html', user=user, products=products)
 
 # 상품 등록
 @app.route('/product/new', methods=['GET', 'POST'])
@@ -340,13 +359,24 @@ def user_profile(user_id):
 
     db = get_db()
     cursor = db.cursor()
-    cursor.execute("SELECT username, bio FROM user WHERE id = ?", (user_id,))
+    # 사용자 정보 조회
+    cursor.execute(
+        "SELECT username, bio FROM user WHERE id = ?",
+        (user_id,)
+    )
     user = cursor.fetchone()
     if not user:
         flash("존재하지 않는 사용자입니다.")
         return redirect(url_for('dashboard'))
 
-    return render_template('user_profile.html', user=user)
+    # 해당 사용자가 등록한 상품 조회
+    cursor.execute(
+        "SELECT * FROM product WHERE seller_id = ?",
+        (user_id,)
+    )
+    products = cursor.fetchall()
+
+    return render_template('user_profile.html', user=user, products=products)
 
 # 신고하기
 @app.route('/report', methods=['GET', 'POST'])

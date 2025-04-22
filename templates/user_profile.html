@@ -5,4 +5,20 @@
 <p>소개글:<br>
   {{ user.bio or '등록된 소개글이 없습니다.' }}
 </p>
+
+<hr>
+
+<h3>{{ user.username }} 님이 등록한 상품</h3>
+{% if products %}
+<ul>
+  {% for p in products %}
+    <li>
+      <a href="{{ url_for('view_product', product_id=p.id) }}">{{ p.title }}</a>
+      - 가격: {{ p.price }}
+    </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>등록한 상품이 없습니다.</p>
+{% endif %}
 {% endblock %}
