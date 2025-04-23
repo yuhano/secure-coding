@@ -66,7 +66,9 @@ def init_db():
                 id TEXT PRIMARY KEY,
                 username TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
-                bio TEXT
+                bio TEXT,
+                is_admin   INTEGER NOT NULL DEFAULT 0,
+                is_banned  INTEGER NOT NULL DEFAULT 0
             )
         """)
         # 상품 테이블 생성
