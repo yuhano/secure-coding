@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}채팅 — {{ product_title }}{% endblock %}
+{% block content %}
+<h2>💬 {{ product_title }} ({{ other_name }})</h2>
+
+<div id="chat_window" style="height:300px; overflow-y:auto; border:1px solid #e0e0e0; padding:10px;">
+  {% for m in messages %}
+    <div style="margin-bottom:8px;">
+      <strong>{{ m.username }}:</strong> {{ m.message }}
+      <div style="font-size:0.8em; color:#888;">{{ m.timestamp }}</div>
+    </div>
+  {% endfor %}
+</div>
+
+<input id="chat_input" type="text" placeholder="메시지를 입력하세요">
+<button id="send_btn">전송</button>
+
+<script>
+  var socket = io();
+  var room = "{{ room_id }}";
+
+  socket.on('connect', function(){
+    socket.emit('join_room', { room_id: room });
+  });
+  socket.on('chat_message', function(data){
+    var win = document.getElementById('chat_window');
+    var item = document.createElement('div');
+    item.innerHTML = 
+      '<strong>'+ data.username +':</strong> '+
+      data.message +
+      '<div style="font-size:0.8em; color:#888;">'+ data.timestamp +'</div>';
+    win.appendChild(item);
+    win.scrollTop = win.scrollHeight;
+  });
+
+  document.getElementById('send_btn').onclick = function(){
+    var msg = document.getElementById('chat_input').value;
+    if(!msg) return;
+    socket.emit('send_message', {
+      room_id: room,
+      message: msg
+    });
+    document.getElementById('chat_input').value = '';
+  };
+</script>
+{% endblock %}

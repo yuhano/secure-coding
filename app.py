@@ -1,7 +1,7 @@
 import sqlite3
 import uuid
 from flask import Flask, render_template, request, redirect, url_for, session, flash, g
-from flask_socketio import SocketIO, send, disconnect
+from flask_socketio import SocketIO, send, disconnect, join_room, leave_room, emit
 from werkzeug.security import generate_password_hash, check_password_hash 
 from functools import wraps
 from flask_wtf import CSRFProtect
@@ -31,7 +31,7 @@ app.config.update(
     SESSION_COOKIE_SECURE = True,       # HTTPS 전용
     SESSION_COOKIE_HTTPONLY = True,     # JS 접근 차단
     SESSION_COOKIE_SAMESITE = "Lax",    # 필요하면 Strict
-    PERMANENT_SESSION_LIFETIME = 3600,  # 1시간(필요에 맞게)
+    # PERMANENT_SESSION_LIFETIME = 3600,  # 1시간(필요에 맞게)
 )
 
 limiter = Limiter(
@@ -87,6 +87,30 @@ def init_db():
                 target_id TEXT NOT NULL,
                 reason TEXT NOT NULL
             )
+        """)
+        # 채팅방 테이블
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS chat_room (
+            id TEXT PRIMARY KEY,
+            product_id TEXT NOT NULL,
+            buyer_id TEXT NOT NULL,
+            seller_id TEXT NOT NULL,
+            FOREIGN KEY(product_id) REFERENCES product(id),
+            FOREIGN KEY(buyer_id)   REFERENCES user(id),
+            FOREIGN KEY(seller_id)  REFERENCES user(id)
+        )
+        """)
+        # 채팅 메시지 테이블
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS chat_message (
+            id TEXT PRIMARY KEY,
+            room_id TEXT NOT NULL,
+            sender_id TEXT NOT NULL,
+            message TEXT NOT NULL,
+            timestamp DATETIME NOT NULL,
+            FOREIGN KEY(room_id)   REFERENCES chat_room(id),
+            FOREIGN KEY(sender_id) REFERENCES user(id)
+        )
         """)
         db.commit()
 
@@ -487,6 +511,155 @@ def handle_send_message_event(data):
     send(payload, broadcast=True)
     # data['message_id'] = str(uuid.uuid4())
     # send(data, broadcast=True)
+
+@app.route('/chat')
+@login_required
+def chat_list():
+    db = get_db()
+    cursor = db.cursor()
+    uid = session['user_id']
+    # 자신이 참여한 방(구매자 또는 판매자)
+    cursor.execute("""
+      SELECT
+        cr.id          AS room_id,
+        p.title        AS product_title,
+        cr.buyer_id    AS buyer_id,
+        cr.seller_id   AS seller_id,
+        seller.username AS seller_name,
+        buyer.username  AS buyer_name
+      FROM chat_room cr
+      JOIN product p      ON cr.product_id = p.id
+      JOIN user seller    ON cr.seller_id  = seller.id
+      JOIN user buyer     ON cr.buyer_id   = buyer.id
+      WHERE cr.buyer_id = ?
+         OR cr.seller_id = ?
+    """, (uid, uid))
+    rooms = cursor.fetchall()
+    return render_template('chat_list.html', rooms=rooms)
+
+@app.route('/chat/<room_id>')
+@login_required
+def chat_room(room_id):
+    if not validate_uuid4(room_id):
+        flash("잘못된 요청입니다.")
+        return redirect(url_for('chat_list'))
+
+    db = get_db()
+    cursor = db.cursor()
+
+    # 방 정보 & 권한 확인
+    cursor.execute("""
+      SELECT cr.product_id, p.title, cr.buyer_id, cr.seller_id
+      FROM chat_room cr
+      JOIN product p ON cr.product_id = p.id
+      WHERE cr.id = ?
+    """, (room_id,))
+    room = cursor.fetchone()
+    if not room or session['user_id'] not in (room['buyer_id'], room['seller_id']):
+        flash("접근 권한이 없습니다.")
+        return redirect(url_for('chat_list'))
+
+    # 메시지 이력
+    cursor.execute("""
+      SELECT cm.sender_id, cm.message, cm.timestamp, u.username
+      FROM chat_message cm
+      JOIN user u ON cm.sender_id = u.id
+      WHERE cm.room_id = ?
+      ORDER BY cm.timestamp
+    """, (room_id,))
+    messages = cursor.fetchall()
+
+    # 상대방 이름
+    other_id = room['seller_id'] if session['user_id']==room['buyer_id'] else room['buyer_id']
+    cursor.execute("SELECT username FROM user WHERE id = ?", (other_id,))
+    other = cursor.fetchone()
+
+    return render_template('chat_room.html',
+                           room_id=room_id,
+                           product_title=room['title'],
+                           other_name=other['username'],
+                           messages=messages)
+
+@socketio.on('join_room')
+@login_required
+def on_join(data):
+    room = data.get('room_id')
+    join_room(room)   # flask-socketio 기능
+
+@socketio.on('send_message')
+@login_required
+def handle_send_message_event(data):
+    room_id = data.get('room_id')
+    text    = data.get('message', '').strip()
+    uid     = session['user_id']
+    if not room_id or not text:
+        return
+
+    # 1) DB 저장
+    ts = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute(
+      "INSERT INTO chat_message (id, room_id, sender_id, message, timestamp) "
+      "VALUES (?, ?, ?, ?, ?)",
+      (str(uuid.uuid4()), room_id, uid, text, ts)
+    )
+    db.commit()
+
+    # 2) 같은 방의 클라이언트에게만 브로드캐스트
+    payload = {
+      'username':    session.get('username'),
+      'message':     text,
+      'timestamp':   ts
+    }
+    emit('chat_message', payload, to=room_id)
+    
+@app.route('/product/<product_id>/chat', methods=['POST'])
+@login_required
+@limiter.limit("5 per minute", methods=["POST"])
+def start_chat(product_id):
+    # 상품 ID 유효성 검사
+    if not validate_uuid4(product_id):
+        flash("잘못된 요청입니다.")
+        return redirect(url_for('dashboard'))
+
+    db = get_db()
+    cursor = db.cursor()
+
+    # 상품과 판매자 조회
+    cursor.execute("SELECT seller_id FROM product WHERE id = ?", (product_id,))
+    row = cursor.fetchone()
+    if not row:
+        flash("존재하지 않는 상품입니다.")
+        return redirect(url_for('dashboard'))
+    seller_id = row['seller_id']
+    buyer_id  = session['user_id']
+
+    # 본인 게시글이면 프로필로
+    if seller_id == buyer_id:
+        return redirect(url_for('profile'))
+
+    # 기존에 생성된 채팅방이 있는지 체크
+    cursor.execute("""
+        SELECT id
+        FROM chat_room
+        WHERE product_id = ? AND buyer_id = ? AND seller_id = ?
+    """, (product_id, buyer_id, seller_id))
+    room = cursor.fetchone()
+    if room:
+        room_id = room['id']
+    else:
+        # 새 방 생성
+        room_id = str(uuid.uuid4())
+        cursor.execute("""
+            INSERT INTO chat_room (id, product_id, buyer_id, seller_id)
+            VALUES (?, ?, ?, ?)
+        """, (room_id, product_id, buyer_id, seller_id))
+        db.commit()
+
+    # 채팅방 페이지로 이동
+    return redirect(url_for('chat_room', room_id=room_id))
+
 
 if __name__ == '__main__':
     init_db()  # 앱 컨텍스트 내에서 테이블 생성

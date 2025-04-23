@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}1대1 채팅{% endblock %}
+{% block content %}
+<h2>1대1 채팅 목록</h2>
+<ul>
+  {% for r in rooms %}
+    <li style="display:flex; justify-content:space-between; padding:8px 0;">
+      <a href="{{ url_for('chat_room', room_id=r.room_id) }}">
+        {{ r.product_title }}
+      </a>
+      <span>💬
+        {# 내가 buyer 면 seller, 아니면 buyer 표시 #}
+        {% if session.user_id == r.buyer_id %}
+          {{ r.seller_name }}
+        {% else %}
+          {{ r.buyer_name }}
+        {% endif %}
+      </span>
+    </li>
+  {% endfor %}
+</ul>
+{% endblock %}

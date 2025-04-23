@@ -27,5 +27,12 @@
       상품 삭제
     </button>
   </form>
+{% else %}
+  {# 타인의 글일 때: 1:1 채팅 시작 #}
+  <form action="{{ url_for('start_chat', product_id=product.id) }}"
+        method="post" style="margin-top:1em;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit">1:1 채팅 시작</button>
+  </form>
 {% endif %}
 {% endblock %}
