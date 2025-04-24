@@ -36,7 +36,7 @@
   document.getElementById('send_btn').onclick = function(){
     var msg = document.getElementById('chat_input').value;
     if(!msg) return;
-    socket.emit('send_message', {
+    socket.emit('private_message', {
       room_id: room,
       message: msg
     });

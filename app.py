@@ -540,9 +540,9 @@ def report():
 msg_history = {}
 
 # 실시간 채팅: 클라이언트가 메시지를 보내면 전체 브로드캐스트
-@socketio.on('send_message')
+@socketio.on('public_message')
 @login_required
-def handle_send_message_event(data):
+def handle_public_message(data):
     # ── 입력값 ──
     uid           = session['user_id']
     now           = datetime.utcnow()
@@ -645,9 +645,9 @@ def on_join(data):
     room = data.get('room_id')
     join_room(room)   # flask-socketio 기능
 
-@socketio.on('send_message')
+@socketio.on('private_message')
 @login_required
-def handle_send_message_event(data):
+def handle_private_message(data):
     room_id = data.get('room_id')
     text    = data.get('message', '').strip()
     uid     = session['user_id']
