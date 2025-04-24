@@ -389,9 +389,9 @@ def user_profile(user_id):
 
     db = get_db()
     cursor = db.cursor()
-    # 사용자 정보 조회
+    # 사용자 정보 조회 (id 포함)
     cursor.execute(
-        "SELECT username, bio FROM user WHERE id = ?",
+        "SELECT id, username, bio FROM user WHERE id = ?",
         (user_id,)
     )
     user = cursor.fetchone()
@@ -448,37 +448,79 @@ def delete_product(product_id):
     # ── 원래 페이지로 복귀 ──
     return redirect(url_for(next_page))
 
-
-# 신고하기
 @app.route('/report', methods=['GET', 'POST'])
 @limiter.limit("2 per minute", methods=["POST"])
 @login_required
 def report():
-    if request.method == 'POST':
-        # ── 입력값 ──
-        form      = request.form
-        raw_target_id = form.get("target_id", "")
-        raw_reason= form.get("reason", "")
+    db = get_db()
+    cursor = db.cursor()
 
-        # ── 비즈니스 로직 ──
+    if request.method == 'POST':
+        # ── POST: 폼 제출 처리 ──
+        target_type = request.form['target_type']
+        target_id   = request.form['target_id']
         try:
-            if not validate_uuid4(raw_target_id):
-                raise ValueError("대상이 유효하지 않습니다.")
-            reason = clean_text(raw_reason, max_len=300)
+            # ID 형식 검사
+            if not validate_uuid4(target_id):
+                raise ValueError("유효하지 않은 대상입니다.")
+            # 사유만 입력받음
+            reason = clean_text(request.form['reason'], max_len=300)
         except ValueError as e:
             flash(str(e))
-            return redirect(url_for("report"))
-        
-        db = get_db()
-        cursor = db.cursor()
+            return redirect(request.url)
+
+        # 저장
         cursor.execute(
             "INSERT INTO report (id, reporter_id, target_id, reason) VALUES (?, ?, ?, ?)",
-            (str(uuid.uuid4()), session['user_id'], raw_target_id, reason)
+            (str(uuid.uuid4()), session['user_id'], target_id, reason)
         )
         db.commit()
         flash('신고가 접수되었습니다.')
         return redirect(url_for('dashboard'))
-    return render_template('report.html')
+
+    # ── GET: 신고 폼 렌더링 ──
+    target_type = request.args.get('target_type', '')
+    target_id   = request.args.get('target_id', '')
+
+    # 빈 값 혹은 유효하지 않은 UUID4 처리
+    is_valid = False
+    if target_id:
+        try:
+            is_valid = validate_uuid4(target_id)
+        except ValueError:
+            is_valid = False
+    if target_type not in ('user','product') or not is_valid:
+        flash("신고 대상이 지정되지 않았습니다.")
+        return redirect(url_for('dashboard'))
+
+    # UUID 검증 (빈 값이 아님을 보장했으므로 _require 에러 없음)
+    if not validate_uuid4(target_id):
+        flash("유효하지 않은 대상 ID입니다.")
+        return redirect(url_for('dashboard'))
+
+    # DB 조회하여 라벨 생성
+    if target_type == 'product':
+        cursor.execute("SELECT title FROM product WHERE id = ?", (target_id,))
+        row = cursor.fetchone()
+        if not row:
+            flash("존재하지 않는 상품입니다.")
+            return redirect(url_for('dashboard'))
+        target_label = f"상품 “{row['title']}”"
+    else:
+        cursor.execute("SELECT username FROM user WHERE id = ?", (target_id,))
+        row = cursor.fetchone()
+        if not row:
+            flash("존재하지 않는 사용자입니다.")
+            return redirect(url_for('dashboard'))
+        target_label = f"사용자 “{row['username']}”"
+
+    return render_template(
+        'report.html',
+        target_type=target_type,
+        target_id=target_id,
+        target_label=target_label
+    )
+
 
 msg_history = {}
 
