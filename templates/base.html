@@ -92,6 +92,8 @@
       <a href="{{ url_for('profile') }}">프로필</a>
       <a href="{{ url_for('report') }}">신고하기</a>
       <a href="{{ url_for('chat_list') }}">1대1 채팅</a>
+      <a href="{{ url_for('user_report') }}">내 신고 내역</a>
+
       <a href="{{ url_for('logout') }}">로그아웃</a>
     {% else %}
       <a href="{{ url_for('login') }}">로그인</a>

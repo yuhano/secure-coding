@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}내 신고 내역{% endblock %}
+{% block content %}
+<h2>내 신고 내역</h2>
+
+<h3>상품 신고</h3>
+{% if product_reports %}
+<ul>
+  {% for r in product_reports %}
+    <li style="margin-bottom:1em;">
+      <strong>상품:</strong> {{ r.label }}<br>
+      <strong>사유:</strong> {{ r.reason }}<br>
+      <strong>상태:</strong> {{ r.status }}<br>
+      <small>{{ r.timestamp }}</small>
+    </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>등록된 상품 신고 내역이 없습니다.</p>
+{% endif %}
+
+<h3>사용자 신고</h3>
+{% if user_reports %}
+<ul>
+  {% for r in user_reports %}
+    <li style="margin-bottom:1em;">
+      <strong>사용자:</strong> {{ r.label }}<br>
+      <strong>사유:</strong> {{ r.reason }}<br>
+      <strong>상태:</strong> {{ r.status }}<br>
+      <small>{{ r.timestamp }}</small>
+    </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>등록된 사용자 신고 내역이 없습니다.</p>
+{% endif %}
+{% endblock %}

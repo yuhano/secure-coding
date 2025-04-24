@@ -86,8 +86,12 @@ def init_db():
             CREATE TABLE IF NOT EXISTS report (
                 id TEXT PRIMARY KEY,
                 reporter_id TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                reason TEXT NOT NULL
+                target_type TEXT NOT NULL,        -- 'user' 또는 'product'
+                target_id   TEXT NOT NULL,
+                reason      TEXT NOT NULL,
+                status      TEXT NOT NULL DEFAULT '관리자 처리 중',
+                timestamp   DATETIME NOT NULL,
+                FOREIGN KEY(reporter_id) REFERENCES user(id)
             )
         """)
         # 채팅방 테이블
@@ -471,8 +475,15 @@ def report():
 
         # 저장
         cursor.execute(
-            "INSERT INTO report (id, reporter_id, target_id, reason) VALUES (?, ?, ?, ?)",
-            (str(uuid.uuid4()), session['user_id'], target_id, reason)
+            "INSERT INTO report "
+            "(id, reporter_id, target_type, target_id, reason, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()),
+             session['user_id'],
+             target_type,
+             target_id,
+             reason,
+             datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'))
         )
         db.commit()
         flash('신고가 접수되었습니다.')
@@ -703,6 +714,40 @@ def start_chat(product_id):
 
     # 채팅방 페이지로 이동
     return redirect(url_for('chat_room', room_id=room_id))
+
+@app.route('/my_reports')
+@login_required
+def user_report():
+    db = get_db()
+    cursor = db.cursor()
+    uid = session['user_id']
+    cursor.execute("""
+      SELECT id, target_type, target_id, reason, status, timestamp
+      FROM report
+      WHERE reporter_id = ?
+      ORDER BY timestamp DESC
+    """, (uid,))
+    rows = cursor.fetchall()
+
+    # 분류 & 라벨링
+    user_reports = []
+    product_reports = []
+    for r in rows:
+        entry = dict(r)
+        if r['target_type'] == 'product':
+            cursor.execute("SELECT title FROM product WHERE id = ?", (r['target_id'],))
+            p = cursor.fetchone()
+            entry['label'] = p and p['title'] or '알 수 없는 상품'
+            product_reports.append(entry)
+        else:
+            cursor.execute("SELECT username FROM user WHERE id = ?", (r['target_id'],))
+            u = cursor.fetchone()
+            entry['label'] = u and u['username'] or '알 수 없는 사용자'
+            user_reports.append(entry)
+
+    return render_template('report_history.html',
+                           product_reports=product_reports,
+                           user_reports=user_reports)
 
 
 if __name__ == '__main__':
