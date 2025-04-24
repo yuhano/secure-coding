@@ -253,6 +253,10 @@ def login():
         cursor.execute("SELECT * FROM user WHERE username = ?", (username,))
         user = cursor.fetchone()
         if user and check_password_hash(user['password'], password):
+            # ── 금지된 사용자 차단 ──
+            if user['is_banned']:
+                flash('접근이 제한된 계정입니다. 관리자에게 문의하세요.')
+                return redirect(url_for('index'))
             session.clear()  # 세션 고정 공격 방지
             session['user_id'] = user['id']
             session['username'] = user['username']
