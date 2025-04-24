@@ -130,6 +130,21 @@ def login_required(view_func):
         return view_func(*args, **kwargs)
     return wrapper
 
+# ── 1. admin_required 데코레이터 ──
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        # 로그인 + is_admin 체크
+        if 'user_id' not in session:
+            flash("로그인이 필요합니다.")
+            return redirect(url_for('login'))
+        if not session.get('is_admin'):
+            flash("관리자 권한이 필요합니다.")
+            return redirect(url_for('dashboard'))
+        return view(*args, **kwargs)
+    return wrapped
+
+
 # 기본 라우트
 @app.route('/')
 def index():
@@ -260,6 +275,7 @@ def login():
             session.clear()  # 세션 고정 공격 방지
             session['user_id'] = user['id']
             session['username'] = user['username']
+            session['is_admin']  = bool(user['is_admin'])
             flash('로그인 성공!')
             return redirect(url_for('dashboard'))
         else:
@@ -753,6 +769,113 @@ def user_report():
                            product_reports=product_reports,
                            user_reports=user_reports)
 
+# ── 2. 신고 목록 / 처리 ──
+@app.route('/admin/reports')
+@login_required
+@admin_required
+def admin_reports():
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("""
+      SELECT r.id, r.target_type, r.target_id, r.reason, r.status, r.timestamp,
+             u.username AS reporter_name
+      FROM report r
+      JOIN user u ON r.reporter_id = u.id
+      ORDER BY r.timestamp DESC
+    """)
+    reports = cursor.fetchall()
+    # 각 entry에 레이블 부여
+    items = []
+    for r in reports:
+        label = ''
+        if r['target_type']=='product':
+            p = db.execute("SELECT title FROM product WHERE id = ?", (r['target_id'],)).fetchone()
+            label = p['title'] if p else '알 수 없는 상품'
+        else:
+            u = db.execute("SELECT username FROM user WHERE id = ?", (r['target_id'],)).fetchone()
+            label = u['username'] if u else '알 수 없는 사용자'
+        items.append({
+            **r,
+            'label': label
+        })
+    return render_template('admin_reports.html', reports=items)
+
+
+# ── 3. 신고 처리: 상품 삭제 ──
+@app.route('/admin/reports/<report_id>/delete_product', methods=['POST'])
+@login_required
+@admin_required
+def admin_delete_product(report_id):
+    db = get_db()
+    cursor = db.cursor()
+    # 신고 내용 조회
+    cursor.execute("SELECT target_type, target_id FROM report WHERE id = ?", (report_id,))
+    rpt = cursor.fetchone()
+    if not rpt or rpt['target_type']!='product':
+        flash("잘못된 요청입니다.")
+        return redirect(url_for('admin_reports'))
+
+    # 상품 삭제
+    cursor.execute("DELETE FROM product WHERE id = ?", (rpt['target_id'],))
+    # 신고 상태 업데이트
+    cursor.execute("UPDATE report SET status='완료' WHERE id = ?", (report_id,))
+    db.commit()
+    flash("상품이 삭제되고 신고가 완료 처리되었습니다.")
+    return redirect(url_for('admin_reports'))
+
+
+# ── 4. 신고 처리: 사용자 휴먼 ──
+@app.route('/admin/reports/<report_id>/suspend_user', methods=['POST'])
+@login_required
+@admin_required
+def admin_suspend_user(report_id):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT target_type, target_id FROM report WHERE id = ?", (report_id,))
+    rpt = cursor.fetchone()
+    if not rpt or rpt['target_type']!='user':
+        flash("잘못된 요청입니다.")
+        return redirect(url_for('admin_reports'))
+
+    # 사용자 휴먼
+    cursor.execute("UPDATE user SET is_banned=1 WHERE id = ?", (rpt['target_id'],))
+    # 신고 상태 업데이트
+    cursor.execute("UPDATE report SET status='완료' WHERE id = ?", (report_id,))
+    db.commit()
+    flash("사용자가 휴먼되고 신고가 완료 처리되었습니다.")
+    return redirect(url_for('admin_reports'))
+
+
+# ── 5. 사용자 관리 페이지 ──
+@app.route('/admin/users')
+@login_required
+@admin_required
+def admin_users():
+    db = get_db()
+    users = db.execute("""
+      SELECT id, username, is_admin, is_banned
+      FROM user
+      ORDER BY username
+    """).fetchall()
+    return render_template('admin_users.html', users=users)
+
+
+# ── 6. 사용자 휴먼/활성화 토글 ──
+@app.route('/admin/users/<user_id>/toggle_ban', methods=['POST'])
+@login_required
+@admin_required
+def admin_toggle_ban(user_id):
+    db = get_db()
+    # 현재 상태 조회
+    row = db.execute("SELECT is_banned FROM user WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        flash("존재하지 않는 사용자입니다.")
+        return redirect(url_for('admin_users'))
+    new_status = 0 if row['is_banned'] else 1
+    db.execute("UPDATE user SET is_banned = ? WHERE id = ?", (new_status, user_id))
+    db.commit()
+    flash(f"사용자 {'활성화' if new_status==0 else '휴먼'} 처리되었습니다.")
+    return redirect(url_for('admin_users'))
 
 if __name__ == '__main__':
     init_db()  # 앱 컨텍스트 내에서 테이블 생성

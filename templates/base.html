@@ -94,6 +94,11 @@
       <a href="{{ url_for('chat_list') }}">1대1 채팅</a>
       <a href="{{ url_for('user_report') }}">내 신고 내역</a>
 
+      {% if session.get('is_admin') %}
+        <a href="{{ url_for('admin_reports') }}">관리자 신고 처리</a>
+        <a href="{{ url_for('admin_users') }}">사용자 관리</a>
+      {% endif %}
+
       <a href="{{ url_for('logout') }}">로그아웃</a>
     {% else %}
       <a href="{{ url_for('login') }}">로그인</a>

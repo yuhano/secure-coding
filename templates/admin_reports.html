@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}신고 처리 관리{% endblock %}
+{% block content %}
+<h2>신고 처리 관리</h2>
+<ul>
+  {% for r in reports %}
+    <li style="margin-bottom:1.5em;">
+      <strong>신고자:</strong> {{ r.reporter_name }}<br>
+      <strong>대상:</strong> {{ r.label }} ({{ r.target_type }})<br>
+      <strong>사유:</strong> {{ r.reason }}<br>
+      <strong>상태:</strong> {{ r.status }}<br>
+      <small>{{ r.timestamp }}</small><br>
+      {% if r.status=='관리자 처리 중' %}
+        {% if r.target_type=='product' %}
+          <form action="{{ url_for('admin_delete_product', report_id=r.id) }}" method="post" style="display:inline;">
+            <input name="csrf_token" type="hidden" value="{{ csrf_token() }}">
+            <button type="submit">상품 삭제</button>
+          </form>
+        {% else %}
+          <form action="{{ url_for('admin_suspend_user', report_id=r.id) }}" method="post" style="display:inline;">
+            <input name="csrf_token" type="hidden" value="{{ csrf_token() }}">
+            <button type="submit">사용자 휴먼</button>
+          </form>
+        {% endif %}
+      {% endif %}
+    </li>
+  {% endfor %}
+</ul>
+{% endblock %}

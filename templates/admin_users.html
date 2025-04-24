@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}사용자 관리{% endblock %}
+{% block content %}
+<h2>사용자 관리</h2>
+<ul>
+  {% for u in users %}
+    <li style="margin-bottom:1em;">
+      <strong>{{ u.username }}</strong>
+      {% if u.is_admin %}(관리자){% endif %}
+      {% if u.is_banned %}
+        <span style="color:red;">(휴먼)</span>
+      {% endif %}<br>
+      <form action="{{ url_for('admin_toggle_ban', user_id=u.id) }}" method="post">
+        <input name="csrf_token" type="hidden" value="{{ csrf_token() }}">
+        <button type="submit">
+          {{ '활성화' if u.is_banned else '휴먼' }}
+        </button>
+      </form>
+    </li>
+  {% endfor %}
+</ul>
+{% endblock %}
