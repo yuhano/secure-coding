@@ -2,6 +2,7 @@ import re
 import uuid
 from decimal import Decimal, InvalidOperation
 from markupsafe import escape
+import bleach
 
 """Input‑validation helpers for the Flask Market app."""
 
@@ -35,6 +36,7 @@ def _require(value: str, field: str) -> str:
 
 def clean_text(text: str, *, max_len=500, blank_ok=False) -> str:
     text = _strip(text)
+    text = bleach.clean(text, tags=[], strip=True)
     if not text and not blank_ok:
         raise ValueError("내용을 입력하세요.")
     if len(text) > max_len:

@@ -6,3 +6,4 @@ python-socketio
 eventlet
 Werkzeug
 MarkupSafe
+bleach
