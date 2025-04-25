@@ -304,8 +304,27 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    q = request.args.get('q', '').strip()
     db = get_db()
     cursor = db.cursor()
+    if q:
+        pattern = f"%{q}%"
+        cursor.execute(
+            "SELECT * FROM product WHERE title LIKE ? OR description LIKE ?",
+            (pattern, pattern)
+        )
+    else:
+        cursor.execute("SELECT * FROM product")
+    products = cursor.fetchall()
+
+    cursor.execute("SELECT * FROM user WHERE id = ?", (session['user_id'],))
+    user = cursor.fetchone()
+
+    return render_template('dashboard.html',
+                           products=products,
+                           user=user,
+                           q=q)
+
     # 현재 사용자 조회
     cursor.execute("SELECT * FROM user WHERE id = ?", (session['user_id'],))
     current_user = cursor.fetchone()
