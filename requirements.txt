@@ -7,3 +7,4 @@ eventlet
 Werkzeug
 MarkupSafe
 bleach
+cryptography

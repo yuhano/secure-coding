@@ -30,5 +30,6 @@ pip install -r requirements.txt
 run the server process.
 
 ```
+export ACCOUNT_ENC_KEY="C6G5UJQPiHvHcmKuUlt5h-qj4yOHwOjvd6CdWlqdPoQ="
 python app.py
 ```

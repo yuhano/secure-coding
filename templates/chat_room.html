@@ -3,6 +3,12 @@
 {% block content %}
 <h2>💬 {{ product_title }} ({{ other_name }})</h2>
 
+{% if is_seller %}
+<button id="send_account_btn" style="margin-bottom:8px;">
+  내 계좌번호 전송
+</button>
+{% endif %}
+
 <div id="chat_window" style="height:300px; overflow-y:auto; border:1px solid #e0e0e0; padding:10px;">
   {% for m in messages %}
     <div style="margin-bottom:8px;">
@@ -18,6 +24,7 @@
 <script>
   var socket = io();
   var room = "{{ room_id }}";
+  var myAcc = "{{ my_account }}";
 
   socket.on('connect', function(){
     socket.emit('join_room', { room_id: room });
@@ -42,5 +49,19 @@
     });
     document.getElementById('chat_input').value = '';
   };
+  // 버튼이 있으면(=판매자이면) 클릭 핸들러 등록
+  var sendAccBtn = document.getElementById('send_account_btn');
+  if (sendAccBtn) {
+    sendAccBtn.addEventListener('click', function(){
+       if (!myAcc) {
+         alert("먼저 프로필에서 계좌번호를 등록해주세요.");
+         return;
+       }
+       socket.emit('private_message', {
+         room_id: room,
+         message: "제 계좌번호: " + myAcc
+       });
+     });
+   }
 </script>
 {% endblock %}

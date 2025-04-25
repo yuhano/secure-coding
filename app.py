@@ -10,6 +10,7 @@ import secrets
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from datetime import datetime, timedelta
+from cryptography.fernet import Fernet, InvalidToken
 
 # import validation helpers from separate module
 from validators import (
@@ -22,6 +23,13 @@ from validators import (
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32)
+
+# --- 계좌번호 암호화용 키 (환경변수로 반드시 설정) ---
+ENC_KEY = os.getenv("ACCOUNT_ENC_KEY")
+if not ENC_KEY:
+    raise RuntimeError("환경변수 ACCOUNT_ENC_KEY를 설정해 주세요")
+fernet = Fernet(ENC_KEY.encode())
+
 DATABASE = 'market.db'
 socketio = SocketIO(app)
 
@@ -68,7 +76,8 @@ def init_db():
                 password TEXT NOT NULL,
                 bio TEXT,
                 is_admin   INTEGER NOT NULL DEFAULT 0,
-                is_banned  INTEGER NOT NULL DEFAULT 0
+                is_banned  INTEGER NOT NULL DEFAULT 0,
+                account_number TEXT
             )
         """)
         # 상품 테이블 생성
@@ -154,7 +163,7 @@ def index():
 
 # 회원가입
 @app.route('/register', methods=['GET', 'POST'])
-@limiter.limit("2 per hour", methods=["POST"])
+@limiter.limit("5 per hour", methods=["POST"])
 def register():
     if request.method == 'POST':
         # ── 입력값 ──
@@ -247,7 +256,7 @@ def change_password():
 
 # 로그인
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit("2 per minute", methods=["POST"])
+@limiter.limit("5 per minute", methods=["POST"])
 def login():
     if request.method == 'POST':
         # ── 입력값 ──
@@ -312,17 +321,20 @@ def profile():
     if request.method == 'POST':
         # ── 입력값 ──
         raw_bio = request.form.get("bio", "")
+        raw_acc = request.form.get("account_number", "").strip()
         try:
             bio = clean_text(raw_bio, max_len=300, blank_ok=True)
+            acct = clean_text(raw_acc, max_len=50, blank_ok=True)
+            encrypted = fernet.encrypt(acct.encode()).decode() if acct else ""
         except ValueError as e:
             flash(str(e))
-            return redirect(url_for("profile"))
+            return redirect(url_for('profile'))
 
         db = get_db()
         cursor = db.cursor()
         cursor.execute(
-            "UPDATE user SET bio = ? WHERE id = ?",
-            (bio, session['user_id'])
+            "UPDATE user SET bio = ?, account_number = ? WHERE id = ?",
+            (bio, encrypted, session['user_id'])
         )
         db.commit()
         flash('프로필이 업데이트되었습니다.')
@@ -334,16 +346,23 @@ def profile():
 
     # 사용자 정보
     cursor.execute(
-        "SELECT * FROM user WHERE id = ?",
+        "SELECT id, username, bio, account_number FROM user WHERE id = ?",
         (session['user_id'],)
     )
-    user = cursor.fetchone()
+    row = cursor.fetchone()
+    try:
+        decrypted = fernet.decrypt(row['account_number'].encode()).decode() if row['account_number'] else ""
+    except InvalidToken:
+        decrypted = ""
 
-    # 사용자가 등록한 상품
-    cursor.execute(
-        "SELECT * FROM product WHERE seller_id = ?",
-        (session['user_id'],)
-    )
+    user = {
+        'id': row['id'],
+        'username': row['username'],
+        'bio': row['bio'],
+        'account_number': decrypted
+    }
+
+    cursor.execute("SELECT * FROM product WHERE seller_id = ?", (session['user_id'],))
     products = cursor.fetchall()
 
     return render_template('profile.html', user=user, products=products)
@@ -351,7 +370,7 @@ def profile():
 # 상품 등록
 @app.route('/product/new', methods=['GET', 'POST'])
 @login_required
-@limiter.limit("2 per minute", methods=["POST"])
+@limiter.limit("5 per minute", methods=["POST"])
 def new_product():
     if request.method == "POST":
         # ── 입력값 ──
@@ -434,7 +453,7 @@ def user_profile(user_id):
 
 @app.route('/product/<product_id>/delete', methods=['POST'])
 @login_required
-@limiter.limit("2 per minute", methods=["POST"])
+@limiter.limit("5 per minute", methods=["POST"])
 def delete_product(product_id):
     # ── 입력값  ──
     form = request.form
@@ -473,7 +492,7 @@ def delete_product(product_id):
     return redirect(url_for(next_page))
 
 @app.route('/report', methods=['GET', 'POST'])
-@limiter.limit("2 per minute", methods=["POST"])
+@limiter.limit("5 per minute", methods=["POST"])
 @login_required
 def report():
     db = get_db()
@@ -611,7 +630,6 @@ def chat_list():
     """, (uid, uid))
     rooms = cursor.fetchall()
     return render_template('chat_list.html', rooms=rooms)
-
 @app.route('/chat/<room_id>')
 @login_required
 def chat_room(room_id):
@@ -644,16 +662,28 @@ def chat_room(room_id):
     """, (room_id,))
     messages = cursor.fetchall()
 
-    # 상대방 이름
-    other_id = room['seller_id'] if session['user_id']==room['buyer_id'] else room['buyer_id']
+    other_id = room['seller_id'] if session['user_id'] == room['buyer_id'] else room['buyer_id']
     cursor.execute("SELECT username FROM user WHERE id = ?", (other_id,))
     other = cursor.fetchone()
+
+    # 내 계좌번호도 템플릿에 넘겨주기
+    cursor.execute("SELECT account_number FROM user WHERE id = ?", (session['user_id'],))
+    enc = cursor.fetchone()['account_number']
+    try:
+        decrypted = fernet.decrypt(enc.encode()).decode() if enc else ""
+    except InvalidToken:
+        decrypted = ""
+
+    is_seller = (session['user_id'] == room['seller_id'])
 
     return render_template('chat_room.html',
                            room_id=room_id,
                            product_title=room['title'],
                            other_name=other['username'],
-                           messages=messages)
+                           messages=messages,
+                           my_account=decrypted,
+                           is_seller=is_seller)
+
 
 @socketio.on('join_room')
 @login_required
